@@ -61,6 +61,7 @@
 
   <!-- Photo overlay -->
   <div id="photo-overlay" class="hidden" role="dialog" aria-modal="true">
+    <button id="btn-photo-close" class="photo-close-btn" type="button" aria-label="Close photo">&times;</button>
     <div id="overlay-inner">
       <img id="overlay-img" src="" alt="Memory" />
       <div id="overlay-caption-wrap">
@@ -104,7 +105,10 @@
       </div>
 
       <div class="letter-divider" aria-hidden="true"></div>
-      <button id="btn-restart" type="button">Sail Again <span aria-hidden="true">⚓</span></button>
+      <div class="letter-actions">
+        <button id="btn-restart" type="button">Sail Again <span aria-hidden="true">⚓</span></button>
+        <button id="btn-print-letter" class="letter-print-btn" type="button">Download as PDF !!</button>
+      </div>
     </div>
   </div>
 

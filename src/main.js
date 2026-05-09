@@ -12,6 +12,7 @@ for (const [path, url] of Object.entries(PHOTO_MODULES)) {
 }
 
 // ── Island data ──────────────────────────────────────────────
+// TODO: replace captions — paste your per-photo descriptions and Claude will rewrite these.
 const ISLANDS = [
   { id: 1,  label: "Where It All Began",    emoji: "⭐", caption: "The very beginning of everything I love.",                              special: true  },
   { id: 2,  label: "Lullaby Lagoon",        emoji: "🌙", caption: "Your voice at night, softer than moonlight."                                          },
@@ -61,6 +62,7 @@ let currentIsland = 0;
 let isAnimating = false;
 let lastOpenedIdx = -1;
 let mapRevealed = false;
+const visitedSet = new Set();
 
 // ── DOM refs ────────────────────────────────────────────────
 const appEl       = document.getElementById('app');
@@ -83,8 +85,10 @@ const overlayCap  = document.getElementById('overlay-caption');
 const overlayName = document.getElementById('overlay-island-name');
 const photoBack   = document.getElementById('btn-photo-back');
 const photoNextEl = document.getElementById('btn-photo-next');
+const photoCloseEl = document.getElementById('btn-photo-close');
 const letterOverlay = document.getElementById('letter-overlay');
 const btnRestart    = document.getElementById('btn-restart');
+const btnPrintLetter = document.getElementById('btn-print-letter');
 
 // ── Audio ───────────────────────────────────────────────────
 const music = new Audio(musicUrl);
@@ -258,9 +262,19 @@ function renderIslands() {
     g.setAttribute('data-index', i);
     g.setAttribute('transform', `translate(${x},${y})`);
     g.setAttribute('aria-label', isl.label);
+    g.setAttribute('role', 'button');
+    g.setAttribute('tabindex', '0');
 
     const isSpecial = isl.special;
     const r = isSpecial ? 28 : 22;
+
+    // Invisible tap hit area — ensures ≥48 px tap target on mobile after scaling
+    const hit = document.createElementNS(ns, 'circle');
+    hit.setAttribute('cx', '0'); hit.setAttribute('cy', '0');
+    hit.setAttribute('r', '60');
+    hit.setAttribute('fill', 'rgba(0,0,0,0)');
+    hit.setAttribute('class', 'island-hit');
+    g.appendChild(hit);
 
     const glow = document.createElementNS(ns, 'circle');
     glow.setAttribute('cx', '0'); glow.setAttribute('cy', '0');
@@ -330,6 +344,11 @@ function renderIslands() {
     g.appendChild(checkT);
 
     mapSVG.appendChild(g);
+
+    g.addEventListener('click', () => jumpToIsland(i));
+    g.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); jumpToIsland(i); }
+    });
   });
 }
 
@@ -441,17 +460,29 @@ function highlightIsland(idx) {
   }
 }
 
-function markVisitedUpTo(idx) {
-  // Mark every island strictly before idx as visited; clear visited beyond it.
+function markVisited(idx) {
+  // Add idx to the set of "ever visited" islands and reflect on the DOM.
+  // The current island stays "arrived", not "visited", so it keeps its glow.
+  visitedSet.add(idx);
   for (let i = 0; i < ISLANDS.length; i++) {
     const g = document.getElementById(`island-${i}`);
     if (!g) continue;
-    if (i < idx) g.classList.add('island-visited');
+    if (visitedSet.has(i) && i !== currentIsland) g.classList.add('island-visited');
+    else g.classList.remove('island-visited');
+  }
+}
+
+function refreshVisitedClasses() {
+  for (let i = 0; i < ISLANDS.length; i++) {
+    const g = document.getElementById(`island-${i}`);
+    if (!g) continue;
+    if (visitedSet.has(i) && i !== currentIsland) g.classList.add('island-visited');
     else g.classList.remove('island-visited');
   }
 }
 
 function clearAllStates() {
+  visitedSet.clear();
   document.querySelectorAll('.island-arrived, .island-visited').forEach(el => {
     el.classList.remove('island-arrived', 'island-visited');
   });
@@ -482,18 +513,44 @@ function navigateTo(idx, openPhoto = true) {
   let stepI = 0;
   function doStep() {
     if (stepI >= steps.length - 1) {
-      markVisitedUpTo(idx);
+      markVisited(idx);
       highlightIsland(idx);
       isAnimating = false;
       if (openPhoto) setTimeout(() => openOverlay(idx), 300);
       return;
     }
+    // mark each intermediate island visited as the boat passes through
+    markVisited(steps[stepI]);
     animateBoatAlongPath(steps[stepI], steps[stepI+1], () => {
       stepI++;
       setTimeout(doStep, stepI === steps.length - 1 ? 0 : 60);
     });
   }
   doStep();
+}
+
+// Click-to-jump from the map. Visited / current islands teleport (with a quick
+// fade so it doesn't feel jarring); unvisited islands trigger the full sailing
+// animation and pass through any intermediates.
+function jumpToIsland(idx) {
+  if (isAnimating) return;
+  if (idx < 0 || idx >= ISLANDS.length) return;
+
+  const isVisited = visitedSet.has(idx) || idx === currentIsland;
+  if (!isVisited) {
+    navigateTo(idx, true);
+    return;
+  }
+
+  // Instant teleport with a brief overlay fade
+  currentIsland = idx;
+  counterCur.textContent = idx + 1;
+  setBoatPosition(POSITIONS[idx], 0);
+  centerViewOn(POSITIONS[idx].x, POSITIONS[idx].y, true);
+  highlightIsland(idx);
+  refreshVisitedClasses();
+  // brief delay so the boat snap is perceptible before the photo opens
+  setTimeout(() => openOverlay(idx), 220);
 }
 
 function goNext() { if (currentIsland < ISLANDS.length - 1) navigateTo(currentIsland + 1); }
@@ -504,9 +561,19 @@ function openOverlay(idx) {
   const isl = ISLANDS[idx];
   const src = PHOTOS[idx + 1];
   lastOpenedIdx = idx;
+  visitedSet.add(idx); // viewing the photo counts as having visited
 
   overlayCap.textContent  = isl.caption;
   overlayName.textContent = isl.label;
+
+  // Reset image so the previous photo doesn't briefly show at the wrong size
+  overlayImg.removeAttribute('src');
+  overlayImg.style.display = 'none';
+  overlayImg.style.width = '';
+  overlayImg.style.height = '';
+  overlayImg.style.maxWidth = '';
+  overlayImg.style.maxHeight = '';
+
   overlay.classList.remove('hidden');
 
   // Update Back / Next button visibility & labels
@@ -533,6 +600,7 @@ function openOverlay(idx) {
   const img = new Image();
   img.onload = () => {
     overlayImg.src = src;
+    sizeOverlayImage(img.naturalWidth, img.naturalHeight);
     overlayImg.style.display = 'block';
   };
   img.onerror = () => {
@@ -543,6 +611,22 @@ function openOverlay(idx) {
     document.getElementById('overlay-inner').insertBefore(p, document.getElementById('overlay-caption-wrap'));
   };
   img.src = src;
+}
+
+// Display the image at its natural size; cap at 92vw / 72vh; allow up to 2× upscale only for tiny images.
+function sizeOverlayImage(natW, natH) {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const maxW = vw * 0.92;
+  const maxH = vh * 0.72;
+
+  let w = (natW < vw * 0.4) ? Math.min(natW * 2, maxW) : Math.min(natW, maxW);
+  const ratio = natW / natH;
+  let h = w / ratio;
+  if (h > maxH) { h = maxH; w = h * ratio; }
+
+  overlayImg.style.width  = w + 'px';
+  overlayImg.style.height = h + 'px';
 }
 
 function hideOverlay() {
@@ -574,6 +658,7 @@ function photoBackFn() {
 
 if (photoNextEl) photoNextEl.addEventListener('click', photoNext);
 if (photoBack)   photoBack.addEventListener('click',   photoBackFn);
+if (photoCloseEl) photoCloseEl.addEventListener('click', hideOverlay);
 
 // ── Letter Overlay ───────────────────────────────────────────
 function showLetter() {
@@ -628,6 +713,7 @@ function restartJourney() {
 }
 
 if (btnRestart) btnRestart.addEventListener('click', restartJourney);
+if (btnPrintLetter) btnPrintLetter.addEventListener('click', () => window.print());
 
 // ── Map nav arrows (kept as redundant control during sailing) ──
 btnNext.addEventListener('click', goNext);
@@ -640,6 +726,7 @@ document.addEventListener('keydown', e => {
     return;
   }
   if (!overlay.classList.contains('hidden')) {
+    if (e.key === 'Escape') { hideOverlay(); return; }
     if (e.key === 'ArrowRight' || e.key === 'Enter' || e.key === ' ') { e.preventDefault(); photoNext(); }
     if (e.key === 'ArrowLeft') photoBackFn();
     return;
@@ -693,4 +780,8 @@ window.addEventListener('resize', () => {
   if (!mapRevealed) return;
   initViewport();
   centerViewOn(POSITIONS[currentIsland].x, POSITIONS[currentIsland].y, false);
+  // Re-size any currently visible photo so its caps follow the new viewport
+  if (!overlay.classList.contains('hidden') && overlayImg.naturalWidth) {
+    sizeOverlayImage(overlayImg.naturalWidth, overlayImg.naturalHeight);
+  }
 });

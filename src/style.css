@@ -285,30 +285,57 @@ body::before {
 /* ── Photo Overlay ── */
 #photo-overlay {
   position: fixed; inset: 0; z-index: 200;
-  background: rgba(30, 18, 8, 0.96);
+  background: rgba(20, 10, 0, 0.92);
   display: flex; align-items: center; justify-content: center;
   animation: overlayIn 0.45s cubic-bezier(0.22,1,0.36,1);
+  overflow-y: auto;
+}
+
+.photo-close-btn {
+  position: fixed;
+  top: 16px; right: 16px;
+  z-index: 220;
+  width: 44px; height: 44px;
+  min-width: 44px;
+  border-radius: 50%;
+  border: 1.5px solid #C8903A;
+  background: rgba(200,144,58,0.15);
+  color: #F4D9A8;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+  backdrop-filter: blur(6px);
+}
+.photo-close-btn:hover { background: #C8903A; color: #FDF6EC; box-shadow: 0 6px 18px rgba(200,144,58,0.45); }
+.photo-close-btn:active { transform: scale(0.94); }
+@media (max-width: 768px) {
+  .photo-close-btn { width: 48px; height: 48px; top: 14px; right: 14px; font-size: 26px; }
 }
 @keyframes overlayIn {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
 #overlay-inner {
-  width: 100%; max-width: 540px;
-  height: 100%;
-  display: flex; flex-direction: column; align-items: center;
-  padding: 24px 20px 28px;
+  width: 100%;
+  min-height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 64px 20px 28px;
   gap: 16px;
 }
+#overlay-caption-wrap, #photo-nav { max-width: 540px; width: 100%; }
 #overlay-img {
-  width: 100%;
-  max-height: 56vh;
-  object-fit: cover;
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 92vw;
+  max-height: 72vh;
+  object-fit: contain;
   border-radius: 4px;
   box-shadow: 0 12px 60px rgba(0,0,0,0.7);
   border: 2px solid rgba(200,144,58,0.25);
-  flex-shrink: 1;
-  min-height: 0;
+  background: rgba(0,0,0,0.2);
 }
 #photo-nav {
   margin-top: auto;
@@ -503,9 +530,15 @@ body::before {
 }
 @keyframes dividerIn { to { opacity: 1; } }
 
-#btn-restart {
+.letter-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+#btn-restart, .letter-print-btn {
   display: block;
-  margin: 0 auto;
+  min-height: 48px;
   padding: 14px 32px;
   background: transparent;
   border: 1.6px solid #C8903A;
@@ -526,7 +559,17 @@ body::before {
   color: #FDF6EC;
   box-shadow: 0 6px 22px rgba(200,144,58,0.35);
 }
-#btn-restart:active { transform: scale(0.97); }
+.letter-print-btn {
+  border-color: #A07830;
+  color: #8B6340;
+  animation-delay: 2s;
+}
+.letter-print-btn:hover {
+  background: #A07830;
+  color: #FDF6EC;
+  box-shadow: 0 6px 22px rgba(160,120,48,0.35);
+}
+#btn-restart:active, .letter-print-btn:active { transform: scale(0.97); }
 
 @media (max-width: 768px) {
   #letter-paper { padding: 56px 24px 36px; border-radius: 6px; }
@@ -606,4 +649,102 @@ body::before {
   #photo-nav { padding-bottom: 4px; }
   .photo-nav-btn { font-size: 13px; min-height: 52px; padding: 12px 14px; letter-spacing: 0.1em; }
   .photo-nav-btn.ghost { max-width: 38%; }
+}
+
+/* ── Print stylesheet — saves the letter as a clean parchment PDF ── */
+@media print {
+  @page { size: A4; margin: 2cm; }
+
+  html, body {
+    background: #FDF6EC !important;
+    color: #3E2A14 !important;
+    overflow: visible !important;
+    width: auto !important; height: auto !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  body::before { display: none !important; }
+
+  /* Hide everything by default */
+  body > * { display: none !important; }
+
+  /* Reveal only the letter overlay and reset it to a printable block */
+  body > #letter-overlay {
+    display: block !important;
+    position: static !important;
+    inset: auto !important;
+    background: #FDF6EC !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    animation: none !important;
+  }
+
+  #letter-paper {
+    position: relative !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    padding: 60px 20px 30px !important;
+    max-width: none !important;
+    width: 100% !important;
+    background:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)' opacity='0.10'/%3E%3C/svg%3E"),
+      #FDF6EC !important;
+    animation: none !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Wax seal stays visible at the top */
+  #wax-seal {
+    position: absolute !important;
+    top: 0 !important; left: 50%;
+    transform: translateX(-50%) rotate(-6deg) !important;
+    width: 80px !important; height: 80px !important;
+    animation: none !important;
+    filter: none !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Letter body — preserve italic Cormorant Garamond, reset stagger animation */
+  #letter-body {
+    font-family: 'Cormorant Garamond', serif !important;
+    font-style: italic !important;
+    color: #3E2A14 !important;
+    font-size: 16pt !important;
+    line-height: 1.7 !important;
+  }
+  #letter-body .letter-line {
+    opacity: 1 !important;
+    transform: none !important;
+    animation: none !important;
+    page-break-inside: avoid;
+  }
+  #letter-body #letter-greeting {
+    font-size: 22pt !important;
+    font-weight: 600 !important;
+  }
+  .letter-closing { text-align: right !important; }
+  .letter-closing span { color: #6B4A24 !important; }
+
+  .letter-divider {
+    opacity: 1 !important;
+    animation: none !important;
+    background: linear-gradient(90deg, transparent, #C8903A, transparent) !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .letter-divider::after {
+    background: #FDF6EC !important;
+    color: #C8903A !important;
+  }
+
+  /* Hide every interactive control inside the letter */
+  .letter-actions,
+  #btn-restart,
+  #btn-print-letter,
+  #btn-photo-close,
+  #btn-sound-toggle,
+  #sound-tooltip { display: none !important; }
 }

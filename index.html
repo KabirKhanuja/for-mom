@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta name="description" content="A treasure map of memories, made with love for Mumma." />
+  <title>For Mumma 🌸</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400;1,600&family=Lato:wght@300;400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <!-- Title Card -->
+  <div id="title-card">
+    <div class="title-inner">
+      <div class="title-subtitle">a treasure map of</div>
+      <div class="title-main">For Mumma</div>
+      <div class="title-heart">♡</div>
+    </div>
+  </div>
+
+  <!-- Map Container -->
+  <div id="app" class="hidden">
+    <!-- Decorative elements -->
+    <svg id="deco-svg" class="deco-svg" viewBox="0 0 390 844" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg"></svg>
+
+    <!-- Map scroll area -->
+    <div id="map-viewport">
+      <div id="map-world">
+        <!-- SVG map (path + islands) injected by JS -->
+        <svg id="map-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+        <!-- Boat -->
+        <div id="boat-wrap">
+          <svg id="boat-svg" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+            <!-- Wake ripple -->
+            <ellipse class="wake" cx="12" cy="42" rx="10" ry="3" fill="none" stroke="#C8903A" stroke-width="1.2" opacity="0.5"/>
+            <ellipse class="wake wake2" cx="6" cy="42" rx="6" ry="2" fill="none" stroke="#C8903A" stroke-width="0.8" opacity="0.3"/>
+            <!-- Hull -->
+            <path d="M10 38 Q30 46 50 38 L46 44 Q30 50 14 44 Z" fill="#8B6340"/>
+            <!-- Mast -->
+            <line x1="30" y1="16" x2="30" y2="40" stroke="#3E2A14" stroke-width="2.5" stroke-linecap="round"/>
+            <!-- Sail -->
+            <path d="M30 18 Q44 26 30 38 Z" fill="#FDF6EC" stroke="#C8903A" stroke-width="1"/>
+            <path d="M30 20 Q18 27 30 37 Z" fill="#FDF6EC" stroke="#C8903A" stroke-width="0.8" opacity="0.7"/>
+            <!-- Flag -->
+            <path d="M30 16 L38 20 L30 24 Z" fill="#C8903A"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- Nav arrows -->
+    <button id="btn-prev" class="nav-btn" aria-label="Previous island">&#8592;</button>
+    <button id="btn-next" class="nav-btn" aria-label="Next island">&#8594;</button>
+
+    <!-- Island counter -->
+    <div id="island-counter"><span id="counter-cur">1</span> / 17</div>
+  </div>
+
+  <!-- Photo overlay -->
+  <div id="photo-overlay" class="hidden" role="dialog" aria-modal="true">
+    <button id="overlay-close" aria-label="Close">✕</button>
+    <div id="overlay-inner">
+      <img id="overlay-img" src="" alt="Memory" />
+      <div id="overlay-caption-wrap">
+        <p id="overlay-caption"></p>
+        <div id="overlay-island-name"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

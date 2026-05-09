@@ -1,5 +1,6 @@
+import musicUrl from './assets/maa.mp3';
+
 // ── Photo assets (real photos in /src/assets/) ──────────────
-// Vite resolves these to hashed URLs at build time. Handles .jpg / .JPG / .jpeg / .png.
 const PHOTO_MODULES = import.meta.glob(
   './assets/*.{jpg,JPG,jpeg,JPEG,png,PNG}',
   { eager: true, query: '?url', import: 'default' }
@@ -31,25 +32,12 @@ const ISLANDS = [
   { id: 17, label: "Home Harbour",          emoji: "🏠", caption: "No matter where I go, you are always where home is.",          special: true          },
 ];
 
-// ── Map layout: 900×1400 world coords ──────────────────────
 const POSITIONS = [
-  { x: 180, y: 1280 },  // 1 start (bottom-ish)
-  { x: 340, y: 1170 },  // 2
-  { x: 200, y: 1050 },  // 3
-  { x: 380, y: 950  },  // 4
-  { x: 560, y: 860  },  // 5
-  { x: 390, y: 750  },  // 6
-  { x: 200, y: 660  },  // 7
-  { x: 350, y: 560  },  // 8
-  { x: 560, y: 480  },  // 9
-  { x: 700, y: 380  },  // 10
-  { x: 560, y: 280  },  // 11
-  { x: 380, y: 200  },  // 12
-  { x: 220, y: 290  },  // 13
-  { x: 130, y: 420  },  // 14
-  { x: 260, y: 520  },  // 15
-  { x: 700, y: 580  },  // 16
-  { x: 700, y: 200  },  // 17 end (top)
+  { x: 180, y: 1280 }, { x: 340, y: 1170 }, { x: 200, y: 1050 }, { x: 380, y: 950  },
+  { x: 560, y: 860  }, { x: 390, y: 750  }, { x: 200, y: 660  }, { x: 350, y: 560  },
+  { x: 560, y: 480  }, { x: 700, y: 380  }, { x: 560, y: 280  }, { x: 380, y: 200  },
+  { x: 220, y: 290  }, { x: 130, y: 420  }, { x: 260, y: 520  }, { x: 700, y: 580  },
+  { x: 700, y: 200  },
 ];
 
 const isMobile = () => window.innerWidth < 768;
@@ -72,10 +60,15 @@ function buildPath(pts) {
 let currentIsland = 0;
 let isAnimating = false;
 let lastOpenedIdx = -1;
+let mapRevealed = false;
 
 // ── DOM refs ────────────────────────────────────────────────
 const appEl       = document.getElementById('app');
-const titleCard   = document.getElementById('title-card');
+const splash      = document.getElementById('title-card');
+const btnMusic    = document.getElementById('btn-music');
+const btnSilent   = document.getElementById('btn-silent');
+const btnSound    = document.getElementById('btn-sound-toggle');
+const soundTip    = document.getElementById('sound-tooltip');
 const mapSVG      = document.getElementById('map-svg');
 const boatWrap    = document.getElementById('boat-wrap');
 const mapWorld    = document.getElementById('map-world');
@@ -88,9 +81,40 @@ const overlay     = document.getElementById('photo-overlay');
 const overlayImg  = document.getElementById('overlay-img');
 const overlayCap  = document.getElementById('overlay-caption');
 const overlayName = document.getElementById('overlay-island-name');
-const overlayClose= document.getElementById('overlay-close');
+const photoBack   = document.getElementById('btn-photo-back');
+const photoNextEl = document.getElementById('btn-photo-next');
 const letterOverlay = document.getElementById('letter-overlay');
 const btnRestart    = document.getElementById('btn-restart');
+
+// ── Audio ───────────────────────────────────────────────────
+const music = new Audio(musicUrl);
+music.loop = true;
+music.volume = 0.55;
+music.preload = 'auto';
+
+function syncSoundIcon() {
+  if (!btnSound) return;
+  const playing = !music.paused;
+  btnSound.textContent = playing ? '🔊' : '🔇';
+  btnSound.setAttribute('aria-label', playing ? 'Mute music' : 'Play music');
+  btnSound.classList.toggle('is-muted', !playing);
+}
+music.addEventListener('play',  syncSoundIcon);
+music.addEventListener('pause', syncSoundIcon);
+music.addEventListener('ended', syncSoundIcon);
+
+function startMusic() {
+  // Triggered from a user gesture, so autoplay restrictions are satisfied.
+  music.play().catch(() => { /* silently fall back to muted state */ }).finally(syncSoundIcon);
+}
+
+if (btnSound) {
+  btnSound.addEventListener('click', () => {
+    if (music.paused) music.play().catch(() => {});
+    else music.pause();
+    syncSoundIcon();
+  });
+}
 
 // ── Decorative SVG ─────────────────────
 function renderDeco() {
@@ -142,9 +166,7 @@ function renderMapBackground() {
   for (let y = 80; y < 1400; y += 55) {
     const p = document.createElementNS(ns, 'path');
     let d = `M 0 ${y}`;
-    for (let x = 0; x <= 900; x += 60) {
-      d += ` q 15,-8 30,0 q 15,8 30,0`;
-    }
+    for (let x = 0; x <= 900; x += 60) d += ` q 15,-8 30,0 q 15,8 30,0`;
     p.setAttribute('d', d);
     waveGroup.appendChild(p);
   }
@@ -157,8 +179,7 @@ function renderMapBackground() {
       const c = document.createElementNS(ns, 'ellipse');
       c.setAttribute('cx', cx + ox);
       c.setAttribute('cy', cy + (i%2===0 ? 0 : -7));
-      c.setAttribute('rx', 12 + i*2);
-      c.setAttribute('ry', 8);
+      c.setAttribute('rx', 12 + i*2); c.setAttribute('ry', 8);
       c.setAttribute('fill', '#C8903A');
       g.appendChild(c);
     });
@@ -166,12 +187,43 @@ function renderMapBackground() {
   });
 }
 
-// ── Island SVG ───────────────────────────────────────────────
+// ── Path used for boat curve ─────────────────────────
+let pathEl = null;
+let pathTotalLen = 0;
+const segmentLengths = []; // cumulative path length up to each island index
+
+function buildPathSegments() {
+  // Use a hidden temporary path per segment to measure cumulative arc lengths
+  const ns = 'http://www.w3.org/2000/svg';
+  const tmp = document.createElementNS(ns, 'svg');
+  tmp.setAttribute('style', 'position:absolute;width:0;height:0;visibility:hidden');
+  document.body.appendChild(tmp);
+  segmentLengths.length = 0;
+  segmentLengths.push(0);
+  let total = 0;
+  for (let i = 1; i < POSITIONS.length; i++) {
+    const p = document.createElementNS(ns, 'path');
+    const prev = POSITIONS[i-1];
+    const cur  = POSITIONS[i];
+    const cpx1 = prev.x + (cur.x - prev.x) * 0.4;
+    const cpy1 = prev.y;
+    const cpx2 = prev.x + (cur.x - prev.x) * 0.6;
+    const cpy2 = cur.y;
+    p.setAttribute('d', `M ${prev.x} ${prev.y} C ${cpx1} ${cpy1} ${cpx2} ${cpy2} ${cur.x} ${cur.y}`);
+    tmp.appendChild(p);
+    total += p.getTotalLength();
+    segmentLengths.push(total);
+  }
+  pathTotalLen = total;
+  tmp.remove();
+}
+
+// ── Islands ───────────────────────────────────────────────
 function renderIslands() {
   const ns = 'http://www.w3.org/2000/svg';
 
   const pathD = buildPath(POSITIONS);
-  const pathEl = document.createElementNS(ns, 'path');
+  pathEl = document.createElementNS(ns, 'path');
   pathEl.setAttribute('d', pathD);
   pathEl.setAttribute('fill', 'none');
   pathEl.setAttribute('stroke', '#8B6340');
@@ -179,8 +231,10 @@ function renderIslands() {
   pathEl.setAttribute('stroke-dasharray', '8 10');
   pathEl.setAttribute('stroke-linecap', 'round');
   pathEl.setAttribute('opacity', '0.7');
+  pathEl.setAttribute('id', 'journey-path');
   mapSVG.appendChild(pathEl);
 
+  // Direction arrows
   ISLANDS.forEach((isl, i) => {
     if (i === 0) return;
     const prev = POSITIONS[i-1];
@@ -203,20 +257,10 @@ function renderIslands() {
     g.setAttribute('id', `island-${i}`);
     g.setAttribute('data-index', i);
     g.setAttribute('transform', `translate(${x},${y})`);
-    g.setAttribute('role', 'button');
-    g.setAttribute('tabindex', '0');
     g.setAttribute('aria-label', isl.label);
 
     const isSpecial = isl.special;
     const r = isSpecial ? 28 : 22;
-
-    // Invisible hit area — large enough to give a 48px+ tap target even when scaled down on mobile
-    const hit = document.createElementNS(ns, 'circle');
-    hit.setAttribute('cx', '0'); hit.setAttribute('cy', '0');
-    hit.setAttribute('r', '60');
-    hit.setAttribute('fill', 'rgba(0,0,0,0)');
-    hit.setAttribute('class', 'island-hit');
-    g.appendChild(hit);
 
     const glow = document.createElementNS(ns, 'circle');
     glow.setAttribute('cx', '0'); glow.setAttribute('cy', '0');
@@ -263,11 +307,14 @@ function renderIslands() {
     label.textContent = isl.label;
     g.appendChild(label);
 
+    // Number / visited check badge
     const numBg = document.createElementNS(ns, 'circle');
     numBg.setAttribute('cx', r - 2); numBg.setAttribute('cy', -(r - 2));
     numBg.setAttribute('r', isMobile() ? '11' : '8');
     numBg.setAttribute('fill', '#3E2A14');
+    numBg.setAttribute('class', 'island-num-bg');
     g.appendChild(numBg);
+
     const numT = document.createElementNS(ns, 'text');
     numT.setAttribute('x', r - 2); numT.setAttribute('y', -(r - (isMobile() ? 8 : 6)));
     numT.setAttribute('text-anchor', 'middle');
@@ -275,10 +322,14 @@ function renderIslands() {
     numT.textContent = isl.id;
     g.appendChild(numT);
 
-    mapSVG.appendChild(g);
+    const checkT = document.createElementNS(ns, 'text');
+    checkT.setAttribute('x', r - 2); checkT.setAttribute('y', -(r - (isMobile() ? 7 : 5)));
+    checkT.setAttribute('text-anchor', 'middle');
+    checkT.setAttribute('class', 'island-check');
+    checkT.textContent = '✓';
+    g.appendChild(checkT);
 
-    g.addEventListener('click', () => navigateTo(i, i === currentIsland));
-    g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') navigateTo(i, i === currentIsland); });
+    mapSVG.appendChild(g);
   });
 }
 
@@ -308,25 +359,30 @@ function setBoatPosition(pos, angle = 0) {
   boatSVG.style.transform = angle > 90 || angle < -90 ? 'scaleX(-1)' : 'scaleX(1)';
 }
 
-function animateBoatTo(fromIdx, toIdx, onDone, durOverride) {
-  const from = POSITIONS[fromIdx];
-  const to   = POSITIONS[toIdx];
-  const dur  = durOverride || 900;
+// Animate the boat along the actual SVG curve between two adjacent islands
+function animateBoatAlongPath(fromIdx, toIdx, onDone, durOverride) {
+  const dur = durOverride || (1800 + Math.random() * 700); // 1.8 – 2.5s
   const start = performance.now();
+
+  if (!pathEl) { setBoatPosition(POSITIONS[toIdx], 0); onDone && onDone(); return; }
+
+  const dir = toIdx > fromIdx ? 1 : -1;
+  const fromLen = segmentLengths[fromIdx] ?? 0;
+  const toLen   = segmentLengths[toIdx]   ?? 0;
 
   function tick(now) {
     const t = Math.min((now - start) / dur, 1);
     const ease = t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
-    const x = from.x + (to.x - from.x) * ease;
-    const y = from.y + (to.y - from.y) * ease;
-    const angle = Math.atan2(to.y - from.y, to.x - from.x) * 180 / Math.PI;
-    setBoatPosition({ x, y }, angle);
-    centerViewOn(x, y, false);
-    if (t < 1) {
-      requestAnimationFrame(tick);
-    } else {
-      setBoatPosition(to, 0);
-      centerViewOn(to.x, to.y, true);
+    const len = fromLen + (toLen - fromLen) * ease;
+    const pt  = pathEl.getPointAtLength(Math.max(0, Math.min(pathTotalLen, len)));
+    const ahead = pathEl.getPointAtLength(Math.max(0, Math.min(pathTotalLen, len + dir * 2)));
+    const angle = Math.atan2(ahead.y - pt.y, ahead.x - pt.x) * 180 / Math.PI;
+    setBoatPosition({ x: pt.x, y: pt.y }, angle);
+    centerViewOn(pt.x, pt.y, false);
+    if (t < 1) requestAnimationFrame(tick);
+    else {
+      setBoatPosition(POSITIONS[toIdx], 0);
+      centerViewOn(POSITIONS[toIdx].x, POSITIONS[toIdx].y, true);
       onDone && onDone();
     }
   }
@@ -342,10 +398,7 @@ function computeScale() {
   const vh = window.innerHeight;
   const byWidth  = vw / 900;
   const byHeight = vh / 1400;
-  if (isMobile()) {
-    // Fit the entire map within the screen on mobile
-    return Math.min(byWidth, byHeight);
-  }
+  if (isMobile()) return Math.min(byWidth, byHeight);
   return Math.max(byWidth, byHeight);
 }
 
@@ -362,7 +415,6 @@ function centerViewOn(wx, wy, smooth) {
   const vh = window.innerHeight;
   let left, top;
   if (isMobile()) {
-    // On mobile the entire map fits — center it in the viewport so all islands stay visible.
     left = (vw - 900 * currentScale) / 2;
     top  = (vh - 1400 * currentScale) / 2;
   } else {
@@ -370,31 +422,46 @@ function centerViewOn(wx, wy, smooth) {
     top  = vh / 2 - wy * currentScale;
   }
   currentTranslate = { x: left, y: top };
-
-  if (smooth) {
-    mapWorld.style.transition = 'left 0.7s cubic-bezier(0.22,1,0.36,1), top 0.7s cubic-bezier(0.22,1,0.36,1)';
-  } else {
-    mapWorld.style.transition = 'none';
-  }
+  mapWorld.style.transition = smooth
+    ? 'left 0.7s cubic-bezier(0.22,1,0.36,1), top 0.7s cubic-bezier(0.22,1,0.36,1)'
+    : 'none';
   mapWorld.style.left = left + 'px';
   mapWorld.style.top  = top  + 'px';
   mapWorld.style.transform = `scale(${currentScale})`;
 }
 
-// ── Arrived highlight ────────────────────────────────────────
+// ── Visited / arrived state ─────────────────────────────────
 function highlightIsland(idx) {
   document.querySelectorAll('.island-arrived').forEach(el => el.classList.remove('island-arrived'));
   const g = document.getElementById(`island-${idx}`);
-  if (g) g.classList.add('island-arrived');
+  if (g) {
+    g.classList.add('island-arrived');
+    // current island is not "visited" — it's active
+    g.classList.remove('island-visited');
+  }
+}
+
+function markVisitedUpTo(idx) {
+  // Mark every island strictly before idx as visited; clear visited beyond it.
+  for (let i = 0; i < ISLANDS.length; i++) {
+    const g = document.getElementById(`island-${i}`);
+    if (!g) continue;
+    if (i < idx) g.classList.add('island-visited');
+    else g.classList.remove('island-visited');
+  }
+}
+
+function clearAllStates() {
+  document.querySelectorAll('.island-arrived, .island-visited').forEach(el => {
+    el.classList.remove('island-arrived', 'island-visited');
+  });
 }
 
 // ── Navigation ───────────────────────────────────────────────
-function navigateTo(idx, openPhoto = false) {
+function navigateTo(idx, openPhoto = true) {
   if (isAnimating) return;
   if (idx < 0 || idx >= ISLANDS.length) return;
-
   const prevIdx = currentIsland;
-
   if (prevIdx === idx) {
     if (openPhoto) openOverlay(idx);
     return;
@@ -404,6 +471,7 @@ function navigateTo(idx, openPhoto = false) {
   currentIsland = idx;
   counterCur.textContent = idx + 1;
 
+  // Step through islands (one segment at a time) so the boat traces the curve.
   let steps = [prevIdx];
   if (Math.abs(idx - prevIdx) > 1) {
     const dir = idx > prevIdx ? 1 : -1;
@@ -414,14 +482,15 @@ function navigateTo(idx, openPhoto = false) {
   let stepI = 0;
   function doStep() {
     if (stepI >= steps.length - 1) {
+      markVisitedUpTo(idx);
       highlightIsland(idx);
       isAnimating = false;
-      if (openPhoto) openOverlay(idx);
+      if (openPhoto) setTimeout(() => openOverlay(idx), 300);
       return;
     }
-    animateBoatTo(steps[stepI], steps[stepI+1], () => {
+    animateBoatAlongPath(steps[stepI], steps[stepI+1], () => {
       stepI++;
-      setTimeout(doStep, stepI === steps.length - 2 ? 0 : 80);
+      setTimeout(doStep, stepI === steps.length - 1 ? 0 : 60);
     });
   }
   doStep();
@@ -439,6 +508,15 @@ function openOverlay(idx) {
   overlayCap.textContent  = isl.caption;
   overlayName.textContent = isl.label;
   overlay.classList.remove('hidden');
+
+  // Update Back / Next button visibility & labels
+  if (photoBack) {
+    photoBack.disabled = (idx === 0);
+    photoBack.style.visibility = (idx === 0) ? 'hidden' : 'visible';
+  }
+  if (photoNextEl) {
+    photoNextEl.textContent = (idx === ISLANDS.length - 1) ? 'Open the Letter →' : 'Next →';
+  }
 
   const ph = overlay.querySelector('.photo-placeholder');
   if (ph) ph.remove();
@@ -467,39 +545,53 @@ function openOverlay(idx) {
   img.src = src;
 }
 
-function closeOverlay() {
-  const wasLast = lastOpenedIdx === ISLANDS.length - 1;
+function hideOverlay() {
   overlay.classList.add('hidden');
   overlayImg.src = '';
   const ph = overlay.querySelector('.photo-placeholder');
   if (ph) ph.remove();
-
-  if (wasLast) {
-    // Brief pause so the transition feels intentional, then the letter takes over.
-    setTimeout(showLetter, 350);
-  }
 }
+
+function photoNext() {
+  if (isAnimating) return;
+  const idx = currentIsland;
+  hideOverlay();
+  if (idx === ISLANDS.length - 1) {
+    setTimeout(showLetter, 350);
+    return;
+  }
+  // Brief pause so the overlay-fade has begun, then sail.
+  setTimeout(() => navigateTo(idx + 1, true), 180);
+}
+
+function photoBackFn() {
+  if (isAnimating) return;
+  const idx = currentIsland;
+  if (idx === 0) return;
+  hideOverlay();
+  setTimeout(() => navigateTo(idx - 1, true), 180);
+}
+
+if (photoNextEl) photoNextEl.addEventListener('click', photoNext);
+if (photoBack)   photoBack.addEventListener('click',   photoBackFn);
 
 // ── Letter Overlay ───────────────────────────────────────────
 function showLetter() {
   letterOverlay.classList.remove('hidden');
-  // Restart line-by-line stagger animation
   const lines = letterOverlay.querySelectorAll('.letter-line');
   lines.forEach((el, i) => {
     el.style.animation = 'none';
-    // force reflow so the animation restarts cleanly
     void el.offsetWidth;
     el.style.animation = `letterLineIn 0.9s cubic-bezier(0.22,1,0.36,1) ${0.25 + i * 0.13}s forwards`;
   });
 }
-
 function hideLetter() { letterOverlay.classList.add('hidden'); }
 
-// ── Restart journey ─────────────────────────────────────────
+// ── Restart ─────────────────────────────────────────────────
 function restartJourney() {
   hideLetter();
-  // Reset visual state on all islands
-  document.querySelectorAll('.island-arrived').forEach(el => el.classList.remove('island-arrived'));
+  hideOverlay();
+  clearAllStates();
   lastOpenedIdx = -1;
 
   const fromIdx = currentIsland;
@@ -508,73 +600,55 @@ function restartJourney() {
   if (fromIdx === 0) {
     highlightIsland(0);
     centerViewOn(POSITIONS[0].x, POSITIONS[0].y, true);
+    setTimeout(() => openOverlay(0), 500);
     return;
   }
 
-  // Smooth direct sail back to start (skip intermediate stops for a quick reset).
   isAnimating = true;
   currentIsland = 0;
-  animateBoatTo(fromIdx, 0, () => {
-    highlightIsland(0);
-    isAnimating = false;
-  }, 1600);
+  // Sail directly back as one continuous swoop (chain segment animations quickly)
+  let stepI = 0;
+  const seq = [];
+  for (let i = fromIdx; i > 0; i--) seq.push([i, i - 1]);
+
+  function doStep() {
+    if (stepI >= seq.length) {
+      highlightIsland(0);
+      isAnimating = false;
+      setTimeout(() => openOverlay(0), 350);
+      return;
+    }
+    const [a, b] = seq[stepI];
+    animateBoatAlongPath(a, b, () => {
+      stepI++;
+      doStep();
+    }, 380); // quick reset
+  }
+  doStep();
 }
 
-// ── Touch / pan support ──────────────────────────────────────
-let panStart = null;
-let panOrigin = { x: 0, y: 0 };
-
-mapViewport.addEventListener('touchstart', e => {
-  if (isMobile()) return; // map is fully fitted on mobile — no pan needed
-  if (e.touches.length === 1) {
-    panStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-    panOrigin = { ...currentTranslate };
-  }
-}, { passive: true });
-
-mapViewport.addEventListener('touchmove', e => {
-  if (!panStart || e.touches.length !== 1) return;
-  const dx = e.touches[0].clientX - panStart.x;
-  const dy = e.touches[0].clientY - panStart.y;
-  const nx = panOrigin.x + dx;
-  const ny = panOrigin.y + dy;
-  mapWorld.style.transition = 'none';
-  mapWorld.style.left = nx + 'px';
-  mapWorld.style.top  = ny + 'px';
-}, { passive: true });
-
-mapViewport.addEventListener('touchend', e => {
-  if (!panStart || e.changedTouches.length !== 1) return;
-  const dx = e.changedTouches[0].clientX - panStart.x;
-  const dy = e.changedTouches[0].clientY - panStart.y;
-  currentTranslate.x = panOrigin.x + dx;
-  currentTranslate.y = panOrigin.y + dy;
-  panStart = null;
-});
-
-// ── Event wiring ─────────────────────────────────────────────
-btnNext.addEventListener('click', goNext);
-btnPrev.addEventListener('click', goPrev);
 if (btnRestart) btnRestart.addEventListener('click', restartJourney);
 
+// ── Map nav arrows (kept as redundant control during sailing) ──
+btnNext.addEventListener('click', goNext);
+btnPrev.addEventListener('click', goPrev);
+
+// Keyboard nav
 document.addEventListener('keydown', e => {
   if (!letterOverlay.classList.contains('hidden')) {
     if (e.key === 'Escape' || e.key === 'Enter') restartJourney();
     return;
   }
-  if (overlay.classList.contains('hidden')) {
-    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') goNext();
-    if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   goPrev();
-  } else {
-    if (e.key === 'Escape') closeOverlay();
+  if (!overlay.classList.contains('hidden')) {
+    if (e.key === 'ArrowRight' || e.key === 'Enter' || e.key === ' ') { e.preventDefault(); photoNext(); }
+    if (e.key === 'ArrowLeft') photoBackFn();
+    return;
   }
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') goNext();
+  if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   goPrev();
 });
 
-overlayClose.addEventListener('click', closeOverlay);
-overlay.addEventListener('click', e => { if (e.target === overlay) closeOverlay(); });
-
-// ── Title card → map reveal ───────────────────────────────────
-let mapRevealed = false;
+// ── Splash → Map reveal ───────────────────────────────────────
 function revealMap() {
   if (mapRevealed) return;
   mapRevealed = true;
@@ -583,22 +657,40 @@ function revealMap() {
   renderDeco();
   renderMapBackground();
   renderIslands();
+  buildPathSegments();
 
   setBoatPosition(POSITIONS[0]);
   centerViewOn(POSITIONS[0].x, POSITIONS[0].y, false);
   highlightIsland(0);
 }
 
-setTimeout(revealMap, 3400);
+function showSoundToggle() {
+  if (!btnSound) return;
+  btnSound.classList.remove('hidden');
+  syncSoundIcon();
+  if (soundTip) {
+    soundTip.classList.add('visible');
+    setTimeout(() => soundTip.classList.remove('visible'), 2200);
+  }
+}
 
-titleCard.addEventListener('click', () => {
-  titleCard.style.animation = 'none';
-  titleCard.style.opacity = '0';
-  titleCard.style.pointerEvents = 'none';
-  revealMap();
-});
+function dismissSplash(withMusic) {
+  if (withMusic) startMusic();
+  splash.classList.add('splash-leaving');
+  setTimeout(() => {
+    splash.classList.add('hidden');
+    revealMap();
+    showSoundToggle();
+    // Brief beat so user gets a glimpse of the map before photo 1 appears
+    setTimeout(() => openOverlay(0), 850);
+  }, 650);
+}
+
+if (btnMusic)  btnMusic.addEventListener('click',  () => dismissSplash(true));
+if (btnSilent) btnSilent.addEventListener('click', () => dismissSplash(false));
 
 window.addEventListener('resize', () => {
+  if (!mapRevealed) return;
   initViewport();
   centerViewOn(POSITIONS[currentIsland].x, POSITIONS[currentIsland].y, false);
 });

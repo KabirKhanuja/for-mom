@@ -11,69 +11,72 @@
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
-  <!-- Title Card -->
+  <!-- Splash / Entry Screen -->
   <div id="title-card">
     <div class="title-inner">
-      <div class="title-subtitle">a treasure map</div>
+      <div class="title-subtitle">a little journey through our memories</div>
       <div class="title-main">For Mumma</div>
       <div class="title-heart">♡</div>
+      <div class="splash-actions">
+        <button id="btn-music"  class="splash-btn primary" type="button">
+          <span aria-hidden="true">🔊</span> Begin with Music
+        </button>
+        <button id="btn-silent" class="splash-btn" type="button">Begin in Silence</button>
+      </div>
+      <div class="splash-hint">Best with sound on ♥</div>
     </div>
   </div>
 
   <!-- Map Container -->
   <div id="app" class="hidden">
-    <!-- Decorative elements -->
     <svg id="deco-svg" class="deco-svg" viewBox="0 0 390 844" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg"></svg>
 
-    <!-- Map scroll area -->
     <div id="map-viewport">
       <div id="map-world">
-        <!-- SVG map (path + islands) injected by JS -->
         <svg id="map-svg" xmlns="http://www.w3.org/2000/svg"></svg>
-        <!-- Boat -->
         <div id="boat-wrap">
           <svg id="boat-svg" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg" width="64" height="64">
-            <!-- Wake ripple -->
             <ellipse class="wake" cx="12" cy="42" rx="10" ry="3" fill="none" stroke="#C8903A" stroke-width="1.2" opacity="0.5"/>
             <ellipse class="wake wake2" cx="6" cy="42" rx="6" ry="2" fill="none" stroke="#C8903A" stroke-width="0.8" opacity="0.3"/>
-            <!-- Hull -->
             <path d="M10 38 Q30 46 50 38 L46 44 Q30 50 14 44 Z" fill="#8B6340"/>
-            <!-- Mast -->
             <line x1="30" y1="16" x2="30" y2="40" stroke="#3E2A14" stroke-width="2.5" stroke-linecap="round"/>
-            <!-- Sail -->
             <path d="M30 18 Q44 26 30 38 Z" fill="#FDF6EC" stroke="#C8903A" stroke-width="1"/>
             <path d="M30 20 Q18 27 30 37 Z" fill="#FDF6EC" stroke="#C8903A" stroke-width="0.8" opacity="0.7"/>
-            <!-- Flag -->
             <path d="M30 16 L38 20 L30 24 Z" fill="#C8903A"/>
           </svg>
         </div>
       </div>
     </div>
 
-    <!-- Nav arrows -->
+    <!-- Map nav arrows (background fallback while sailing) -->
     <button id="btn-prev" class="nav-btn" aria-label="Previous island">&#8592;</button>
     <button id="btn-next" class="nav-btn" aria-label="Next island">&#8594;</button>
 
-    <!-- Island counter -->
     <div id="island-counter"><span id="counter-cur">1</span> / 17</div>
   </div>
 
+  <!-- Sound toggle (revealed after splash) -->
+  <button id="btn-sound-toggle" class="hidden" type="button" aria-label="Toggle music">🔊</button>
+  <div id="sound-tooltip" aria-hidden="true">Music</div>
+
   <!-- Photo overlay -->
   <div id="photo-overlay" class="hidden" role="dialog" aria-modal="true">
-    <button id="overlay-close" aria-label="Close">✕</button>
     <div id="overlay-inner">
       <img id="overlay-img" src="" alt="Memory" />
       <div id="overlay-caption-wrap">
         <p id="overlay-caption"></p>
         <div id="overlay-island-name"></div>
       </div>
+      <div id="photo-nav">
+        <button id="btn-photo-back" class="photo-nav-btn ghost" type="button">&larr; Back</button>
+        <button id="btn-photo-next" class="photo-nav-btn primary" type="button">Next &rarr;</button>
+      </div>
     </div>
   </div>
 
-  <!-- Letter Overlay (revealed after the final photo closes) -->
+  <!-- Letter Overlay -->
   <div id="letter-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="letter-greeting">
     <div id="letter-paper">
-      <!-- Wax seal -->
       <svg id="wax-seal" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <defs>
           <radialGradient id="wax-grad" cx="35%" cy="32%" r="65%">
@@ -82,17 +85,12 @@
             <stop offset="100%" stop-color="#5C1212"/>
           </radialGradient>
         </defs>
-        <!-- Drips -->
         <path d="M22 60 Q26 72 30 60 Z" fill="#5C1212" opacity="0.7"/>
         <path d="M55 58 Q60 70 64 58 Z" fill="#5C1212" opacity="0.7"/>
-        <!-- Main seal -->
         <circle cx="40" cy="40" r="30" fill="url(#wax-grad)" stroke="#3a0a0a" stroke-width="1.2"/>
-        <!-- Crinkled rim -->
         <circle cx="40" cy="40" r="26" fill="none" stroke="#3a0a0a" stroke-width="0.8" stroke-dasharray="2 1" opacity="0.55"/>
-        <!-- Heart -->
         <path d="M40 52 C 30 44, 26 36, 32 31 C 36 28, 39 31, 40 34 C 41 31, 44 28, 48 31 C 54 36, 50 44, 40 52 Z"
               fill="#F4D9A8" opacity="0.92"/>
-        <!-- Highlight -->
         <ellipse cx="32" cy="28" rx="6" ry="3" fill="#fff" opacity="0.18"/>
       </svg>
 

@@ -1,3 +1,15 @@
+// ── Photo assets (real photos in /src/assets/) ──────────────
+// Vite resolves these to hashed URLs at build time. Handles .jpg / .JPG / .jpeg / .png.
+const PHOTO_MODULES = import.meta.glob(
+  './assets/*.{jpg,JPG,jpeg,JPEG,png,PNG}',
+  { eager: true, query: '?url', import: 'default' }
+);
+const PHOTOS = {};
+for (const [path, url] of Object.entries(PHOTO_MODULES)) {
+  const m = path.match(/\/(\d+)\.[^.]+$/);
+  if (m) PHOTOS[parseInt(m[1], 10)] = url;
+}
+
 // ── Island data ──────────────────────────────────────────────
 const ISLANDS = [
   { id: 1,  label: "Where It All Began",    emoji: "⭐", caption: "The very beginning of everything I love.",                              special: true  },
@@ -16,7 +28,7 @@ const ISLANDS = [
   { id: 14, label: "Milestone Mountain",    emoji: "🏔️", caption: "Every big moment — you were the first I wanted to tell."                             },
   { id: 15, label: "Worry Waters",          emoji: "💙", caption: "You carried my fears quietly so I could carry my dreams."                             },
   { id: 16, label: "Memory Meadow",         emoji: "🌼", caption: "A lifetime of small perfect moments, and you're in every one."                        },
-  { id: 17, label: "Home Harbour",          emoji: "🏠", caption: "No matter where I go, you are always where home is.",          special: false         },
+  { id: 17, label: "Home Harbour",          emoji: "🏠", caption: "No matter where I go, you are always where home is.",          special: true          },
 ];
 
 // ── Map layout: 900×1400 world coords ──────────────────────
@@ -35,12 +47,13 @@ const POSITIONS = [
   { x: 380, y: 200  },  // 12
   { x: 220, y: 290  },  // 13
   { x: 130, y: 420  },  // 14
-  { x: 260, y: 520  }, // 15  (near 7 area, off path)
+  { x: 260, y: 520  },  // 15
   { x: 700, y: 580  },  // 16
   { x: 700, y: 200  },  // 17 end (top)
 ];
 
-// Build smooth path through all points
+const isMobile = () => window.innerWidth < 768;
+
 function buildPath(pts) {
   let d = `M ${pts[0].x} ${pts[0].y}`;
   for (let i = 1; i < pts.length; i++) {
@@ -56,8 +69,9 @@ function buildPath(pts) {
 }
 
 // ── State ───────────────────────────────────────────────────
-let currentIsland = 0;  // 0-indexed
+let currentIsland = 0;
 let isAnimating = false;
+let lastOpenedIdx = -1;
 
 // ── DOM refs ────────────────────────────────────────────────
 const appEl       = document.getElementById('app');
@@ -75,11 +89,12 @@ const overlayImg  = document.getElementById('overlay-img');
 const overlayCap  = document.getElementById('overlay-caption');
 const overlayName = document.getElementById('overlay-island-name');
 const overlayClose= document.getElementById('overlay-close');
+const letterOverlay = document.getElementById('letter-overlay');
+const btnRestart    = document.getElementById('btn-restart');
 
-// ── Decorative SVG (compass, waves, clouds) ─────────────────
+// ── Decorative SVG ─────────────────────
 function renderDeco() {
   decoSVG.innerHTML = `
-    <!-- Compass rose (bottom-right) -->
     <g transform="translate(330,780)" opacity="0.55">
       <circle cx="0" cy="0" r="32" fill="none" stroke="#C8903A" stroke-width="1.2"/>
       <circle cx="0" cy="0" r="4"  fill="#C8903A"/>
@@ -92,24 +107,20 @@ function renderDeco() {
       <text x="36" y="4"  text-anchor="middle" font-family="Cormorant Garamond,serif" font-size="10" fill="#8B6340">E</text>
       <text x="-36" y="4" text-anchor="middle" font-family="Cormorant Garamond,serif" font-size="10" fill="#8B6340">W</text>
     </g>
-    <!-- Decorative title text -->
     <text x="50%" y="28" text-anchor="middle" font-family="Cormorant Garamond,serif" font-style="italic" font-size="15" fill="#8B6340" opacity="0.55" letter-spacing="3">A Map of Memories</text>
   `;
 }
 
-// ── Wave SVG in map background ───────────────────────────────
+// ── Map background ───────────────────────────────
 function renderMapBackground() {
   const ns = 'http://www.w3.org/2000/svg';
-  // Defs
   const defs = document.createElementNS(ns, 'defs');
   defs.innerHTML = `
     <filter id="paper" x="-5%" y="-5%" width="110%" height="110%">
       <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="4" result="noise"/>
       <feDisplacementMap in="SourceGraphic" in2="noise" scale="4" xChannelSelector="R" yChannelSelector="G"/>
     </filter>
-    <filter id="islandBlur">
-      <feGaussianBlur stdDeviation="1.5"/>
-    </filter>
+    <filter id="islandBlur"><feGaussianBlur stdDeviation="1.5"/></filter>
     <radialGradient id="islandGrad" cx="50%" cy="50%" r="50%">
       <stop offset="0%" stop-color="#C8903A" stop-opacity="0.35"/>
       <stop offset="100%" stop-color="#C8903A" stop-opacity="0"/>
@@ -117,16 +128,12 @@ function renderMapBackground() {
   `;
   mapSVG.appendChild(defs);
 
-  // Ocean background — large enough to cover beyond 900×1400
   const ocean = document.createElementNS(ns, 'rect');
-  ocean.setAttribute('x', '-2000');
-  ocean.setAttribute('y', '-2000');
-  ocean.setAttribute('width', '5000');
-  ocean.setAttribute('height', '5000');
+  ocean.setAttribute('x', '-2000'); ocean.setAttribute('y', '-2000');
+  ocean.setAttribute('width', '5000'); ocean.setAttribute('height', '5000');
   ocean.setAttribute('fill', '#FDF4E0');
   mapSVG.appendChild(ocean);
 
-  // Subtle wave lines
   const waveGroup = document.createElementNS(ns, 'g');
   waveGroup.setAttribute('opacity', '0.12');
   waveGroup.setAttribute('stroke', '#C8903A');
@@ -143,7 +150,6 @@ function renderMapBackground() {
   }
   mapSVG.appendChild(waveGroup);
 
-  // Small decorative clouds
   [[100,100],[700,150],[820,500],[80,700],[750,900],[200,1100]].forEach(([cx,cy]) => {
     const g = document.createElementNS(ns, 'g');
     g.setAttribute('opacity', '0.18');
@@ -164,19 +170,17 @@ function renderMapBackground() {
 function renderIslands() {
   const ns = 'http://www.w3.org/2000/svg';
 
-  // Path first (behind islands)
   const pathD = buildPath(POSITIONS);
   const pathEl = document.createElementNS(ns, 'path');
   pathEl.setAttribute('d', pathD);
   pathEl.setAttribute('fill', 'none');
   pathEl.setAttribute('stroke', '#8B6340');
-  pathEl.setAttribute('stroke-width', '2.5');
+  pathEl.setAttribute('stroke-width', isMobile() ? '4' : '2.5');
   pathEl.setAttribute('stroke-dasharray', '8 10');
   pathEl.setAttribute('stroke-linecap', 'round');
-  pathEl.setAttribute('opacity', '0.65');
+  pathEl.setAttribute('opacity', '0.7');
   mapSVG.appendChild(pathEl);
 
-  // Subtle direction arrows along path
   ISLANDS.forEach((isl, i) => {
     if (i === 0) return;
     const prev = POSITIONS[i-1];
@@ -192,7 +196,6 @@ function renderIslands() {
     mapSVG.appendChild(arr);
   });
 
-  // Islands
   ISLANDS.forEach((isl, i) => {
     const {x, y} = POSITIONS[i];
     const g = document.createElementNS(ns, 'g');
@@ -207,7 +210,14 @@ function renderIslands() {
     const isSpecial = isl.special;
     const r = isSpecial ? 28 : 22;
 
-    // Glow aura
+    // Invisible hit area — large enough to give a 48px+ tap target even when scaled down on mobile
+    const hit = document.createElementNS(ns, 'circle');
+    hit.setAttribute('cx', '0'); hit.setAttribute('cy', '0');
+    hit.setAttribute('r', '60');
+    hit.setAttribute('fill', 'rgba(0,0,0,0)');
+    hit.setAttribute('class', 'island-hit');
+    g.appendChild(hit);
+
     const glow = document.createElementNS(ns, 'circle');
     glow.setAttribute('cx', '0'); glow.setAttribute('cy', '0');
     glow.setAttribute('r', r + 14);
@@ -215,24 +225,20 @@ function renderIslands() {
     glow.setAttribute('class', 'island-glow');
     g.appendChild(glow);
 
-    // Land mass — irregular blob via path
-    const blobPath = islandBlob(r);
     const blob = document.createElementNS(ns, 'path');
-    blob.setAttribute('d', blobPath);
+    blob.setAttribute('d', islandBlob(r));
     blob.setAttribute('fill', isSpecial ? '#C8903A' : '#D4A56A');
     blob.setAttribute('stroke', '#8B6340');
     blob.setAttribute('stroke-width', '1.8');
     blob.setAttribute('class', 'island-body');
     g.appendChild(blob);
 
-    // Inner texture
     const inner = document.createElementNS(ns, 'path');
     inner.setAttribute('d', islandBlob(r * 0.55));
     inner.setAttribute('fill', isSpecial ? '#E8B86D' : '#E8C98A');
     inner.setAttribute('opacity', '0.6');
     g.appendChild(inner);
 
-    // Idle pulse ring
     const ring = document.createElementNS(ns, 'circle');
     ring.setAttribute('cx', '0'); ring.setAttribute('cy', '0');
     ring.setAttribute('r', isSpecial ? '10' : '8');
@@ -242,47 +248,37 @@ function renderIslands() {
     ring.setAttribute('class', 'island-pulse island-ring');
     g.appendChild(ring);
 
-    // Emoji label
     const emojiT = document.createElementNS(ns, 'text');
     emojiT.setAttribute('x', '0'); emojiT.setAttribute('y', '5');
     emojiT.setAttribute('text-anchor', 'middle');
-    emojiT.setAttribute('font-size', isSpecial ? '20' : '15');
+    emojiT.setAttribute('class', `island-emoji${isSpecial ? ' special' : ''}`);
     emojiT.textContent = isl.emoji;
     g.appendChild(emojiT);
 
-    // Name label below
     const label = document.createElementNS(ns, 'text');
     label.setAttribute('x', '0');
     label.setAttribute('y', r + 16);
     label.setAttribute('text-anchor', 'middle');
-    label.setAttribute('font-family', 'Cormorant Garamond, serif');
-    label.setAttribute('font-style', 'italic');
-    label.setAttribute('font-size', isSpecial ? '12' : '10');
-    label.setAttribute('fill', '#3E2A14');
-    label.setAttribute('opacity', '0.85');
+    label.setAttribute('class', `island-label${isSpecial ? ' special' : ''}`);
     label.textContent = isl.label;
     g.appendChild(label);
 
-    // Number badge
     const numBg = document.createElementNS(ns, 'circle');
     numBg.setAttribute('cx', r - 2); numBg.setAttribute('cy', -(r - 2));
-    numBg.setAttribute('r', '8');
+    numBg.setAttribute('r', isMobile() ? '11' : '8');
     numBg.setAttribute('fill', '#3E2A14');
     g.appendChild(numBg);
     const numT = document.createElementNS(ns, 'text');
-    numT.setAttribute('x', r - 2); numT.setAttribute('y', -(r - 6));
+    numT.setAttribute('x', r - 2); numT.setAttribute('y', -(r - (isMobile() ? 8 : 6)));
     numT.setAttribute('text-anchor', 'middle');
-    numT.setAttribute('font-family', 'Lato, sans-serif');
-    numT.setAttribute('font-size', '8');
-    numT.setAttribute('fill', '#FDF6EC');
+    numT.setAttribute('class', 'island-num');
     numT.textContent = isl.id;
     g.appendChild(numT);
 
     mapSVG.appendChild(g);
 
-    // Click / tap
-    g.addEventListener('click', () => navigateTo(i));
-    g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') navigateTo(i); });
+    g.addEventListener('click', () => navigateTo(i, i === currentIsland));
+    g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') navigateTo(i, i === currentIsland); });
   });
 }
 
@@ -309,32 +305,23 @@ function setBoatPosition(pos, angle = 0) {
   boatWrap.style.left = pos.x + 'px';
   boatWrap.style.top  = pos.y + 'px';
   const boatSVG = document.getElementById('boat-svg');
-  // Flip based on direction
   boatSVG.style.transform = angle > 90 || angle < -90 ? 'scaleX(-1)' : 'scaleX(1)';
 }
 
-// Interpolate along the path between two island positions
-function animateBoatTo(fromIdx, toIdx, onDone) {
+function animateBoatTo(fromIdx, toIdx, onDone, durOverride) {
   const from = POSITIONS[fromIdx];
   const to   = POSITIONS[toIdx];
-  const dur  = 900; // ms
+  const dur  = durOverride || 900;
   const start = performance.now();
-
-  // Build intermediate waypoints using the cubic bezier
-  const totalPts = buildPathSegments();
 
   function tick(now) {
     const t = Math.min((now - start) / dur, 1);
-    const ease = t < 0.5 ? 2*t*t : -1+(4-2*t)*t; // ease-in-out
-
-    // Simple lerp for now; upgrade to path-following later
+    const ease = t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
     const x = from.x + (to.x - from.x) * ease;
     const y = from.y + (to.y - from.y) * ease;
     const angle = Math.atan2(to.y - from.y, to.x - from.x) * 180 / Math.PI;
-
     setBoatPosition({ x, y }, angle);
     centerViewOn(x, y, false);
-
     if (t < 1) {
       requestAnimationFrame(tick);
     } else {
@@ -345,21 +332,20 @@ function animateBoatTo(fromIdx, toIdx, onDone) {
   }
   requestAnimationFrame(tick);
 }
-function buildPathSegments() { return POSITIONS; }
 
-// ── Viewport centering ───────────────────────────────────────
+// ── Viewport / scaling ───────────────────────────────────────
 let currentScale = 1;
 let currentTranslate = { x: 0, y: 0 };
 
 function computeScale() {
-  // Fill at least the viewport width so the map looks full-bleed
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  // Fit to the narrower of: width-based or height-based
-  // but ensure it's at least viewport-width-filling
   const byWidth  = vw / 900;
   const byHeight = vh / 1400;
-  // Use larger of the two so one dimension always fills
+  if (isMobile()) {
+    // Fit the entire map within the screen on mobile
+    return Math.min(byWidth, byHeight);
+  }
   return Math.max(byWidth, byHeight);
 }
 
@@ -374,11 +360,15 @@ function initViewport() {
 function centerViewOn(wx, wy, smooth) {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  // With transform-origin:0,0 and transform:scale(s):
-  // screen_x of world point = left + world_x * s
-  // To center (wx,wy): left + wx*s = vw/2  =>  left = vw/2 - wx*s
-  const left = vw / 2 - wx * currentScale;
-  const top  = vh / 2 - wy * currentScale;
+  let left, top;
+  if (isMobile()) {
+    // On mobile the entire map fits — center it in the viewport so all islands stay visible.
+    left = (vw - 900 * currentScale) / 2;
+    top  = (vh - 1400 * currentScale) / 2;
+  } else {
+    left = vw / 2 - wx * currentScale;
+    top  = vh / 2 - wy * currentScale;
+  }
   currentTranslate = { x: left, y: top };
 
   if (smooth) {
@@ -393,7 +383,6 @@ function centerViewOn(wx, wy, smooth) {
 
 // ── Arrived highlight ────────────────────────────────────────
 function highlightIsland(idx) {
-  // Remove previous
   document.querySelectorAll('.island-arrived').forEach(el => el.classList.remove('island-arrived'));
   const g = document.getElementById(`island-${idx}`);
   if (g) g.classList.add('island-arrived');
@@ -404,19 +393,17 @@ function navigateTo(idx, openPhoto = false) {
   if (isAnimating) return;
   if (idx < 0 || idx >= ISLANDS.length) return;
 
-  isAnimating = true;
   const prevIdx = currentIsland;
-  currentIsland = idx;
-  counterCur.textContent = idx + 1;
 
-  // If same island, just open photo
   if (prevIdx === idx) {
-    isAnimating = false;
-    openOverlay(idx);
+    if (openPhoto) openOverlay(idx);
     return;
   }
 
-  // Animate step by step if jumping multiple
+  isAnimating = true;
+  currentIsland = idx;
+  counterCur.textContent = idx + 1;
+
   let steps = [prevIdx];
   if (Math.abs(idx - prevIdx) > 1) {
     const dir = idx > prevIdx ? 1 : -1;
@@ -434,56 +421,103 @@ function navigateTo(idx, openPhoto = false) {
     }
     animateBoatTo(steps[stepI], steps[stepI+1], () => {
       stepI++;
-      // small pause at intermediate islands
       setTimeout(doStep, stepI === steps.length - 2 ? 0 : 80);
     });
   }
   doStep();
 }
 
-function goNext() {
-  if (currentIsland < ISLANDS.length - 1) navigateTo(currentIsland + 1);
-}
-function goPrev() {
-  if (currentIsland > 0) navigateTo(currentIsland - 1);
-}
+function goNext() { if (currentIsland < ISLANDS.length - 1) navigateTo(currentIsland + 1); }
+function goPrev() { if (currentIsland > 0) navigateTo(currentIsland - 1); }
 
 // ── Photo Overlay ────────────────────────────────────────────
 function openOverlay(idx) {
   const isl = ISLANDS[idx];
-  const src = `/photos/photo-${String(idx+1).padStart(2,'0')}.jpg`;
+  const src = PHOTOS[idx + 1];
+  lastOpenedIdx = idx;
 
   overlayCap.textContent  = isl.caption;
   overlayName.textContent = isl.label;
   overlay.classList.remove('hidden');
 
+  const ph = overlay.querySelector('.photo-placeholder');
+  if (ph) ph.remove();
+
+  if (!src) {
+    overlayImg.style.display = 'none';
+    const p = document.createElement('div');
+    p.className = 'photo-placeholder';
+    p.innerHTML = `<div style="font-size:40px">${isl.emoji}</div><div>${isl.label}</div><div style="font-size:13px;opacity:0.6">photo ${idx+1} not found</div>`;
+    document.getElementById('overlay-inner').insertBefore(p, document.getElementById('overlay-caption-wrap'));
+    return;
+  }
+
   const img = new Image();
   img.onload = () => {
     overlayImg.src = src;
     overlayImg.style.display = 'block';
-    // remove any placeholder
-    const ph = overlay.querySelector('.photo-placeholder');
-    if (ph) ph.remove();
   };
   img.onerror = () => {
     overlayImg.style.display = 'none';
-    // Show placeholder
-    let ph = overlay.querySelector('.photo-placeholder');
-    if (!ph) {
-      ph = document.createElement('div');
-      ph.className = 'photo-placeholder';
-      ph.innerHTML = `<div style="font-size:40px">${isl.emoji}</div><div>${isl.label}</div><div style="font-size:13px;opacity:0.6">photo-${String(idx+1).padStart(2,'0')}.jpg</div>`;
-      document.getElementById('overlay-inner').insertBefore(ph, overlayCap.parentNode);
-    }
+    const p = document.createElement('div');
+    p.className = 'photo-placeholder';
+    p.innerHTML = `<div style="font-size:40px">${isl.emoji}</div><div>${isl.label}</div>`;
+    document.getElementById('overlay-inner').insertBefore(p, document.getElementById('overlay-caption-wrap'));
   };
   img.src = src;
 }
 
 function closeOverlay() {
+  const wasLast = lastOpenedIdx === ISLANDS.length - 1;
   overlay.classList.add('hidden');
   overlayImg.src = '';
   const ph = overlay.querySelector('.photo-placeholder');
   if (ph) ph.remove();
+
+  if (wasLast) {
+    // Brief pause so the transition feels intentional, then the letter takes over.
+    setTimeout(showLetter, 350);
+  }
+}
+
+// ── Letter Overlay ───────────────────────────────────────────
+function showLetter() {
+  letterOverlay.classList.remove('hidden');
+  // Restart line-by-line stagger animation
+  const lines = letterOverlay.querySelectorAll('.letter-line');
+  lines.forEach((el, i) => {
+    el.style.animation = 'none';
+    // force reflow so the animation restarts cleanly
+    void el.offsetWidth;
+    el.style.animation = `letterLineIn 0.9s cubic-bezier(0.22,1,0.36,1) ${0.25 + i * 0.13}s forwards`;
+  });
+}
+
+function hideLetter() { letterOverlay.classList.add('hidden'); }
+
+// ── Restart journey ─────────────────────────────────────────
+function restartJourney() {
+  hideLetter();
+  // Reset visual state on all islands
+  document.querySelectorAll('.island-arrived').forEach(el => el.classList.remove('island-arrived'));
+  lastOpenedIdx = -1;
+
+  const fromIdx = currentIsland;
+  counterCur.textContent = '1';
+
+  if (fromIdx === 0) {
+    highlightIsland(0);
+    centerViewOn(POSITIONS[0].x, POSITIONS[0].y, true);
+    return;
+  }
+
+  // Smooth direct sail back to start (skip intermediate stops for a quick reset).
+  isAnimating = true;
+  currentIsland = 0;
+  animateBoatTo(fromIdx, 0, () => {
+    highlightIsland(0);
+    isAnimating = false;
+  }, 1600);
 }
 
 // ── Touch / pan support ──────────────────────────────────────
@@ -491,6 +525,7 @@ let panStart = null;
 let panOrigin = { x: 0, y: 0 };
 
 mapViewport.addEventListener('touchstart', e => {
+  if (isMobile()) return; // map is fully fitted on mobile — no pan needed
   if (e.touches.length === 1) {
     panStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
     panOrigin = { ...currentTranslate };
@@ -520,8 +555,13 @@ mapViewport.addEventListener('touchend', e => {
 // ── Event wiring ─────────────────────────────────────────────
 btnNext.addEventListener('click', goNext);
 btnPrev.addEventListener('click', goPrev);
+if (btnRestart) btnRestart.addEventListener('click', restartJourney);
 
 document.addEventListener('keydown', e => {
+  if (!letterOverlay.classList.contains('hidden')) {
+    if (e.key === 'Escape' || e.key === 'Enter') restartJourney();
+    return;
+  }
   if (overlay.classList.contains('hidden')) {
     if (e.key === 'ArrowRight' || e.key === 'ArrowDown') goNext();
     if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   goPrev();
@@ -531,19 +571,7 @@ document.addEventListener('keydown', e => {
 });
 
 overlayClose.addEventListener('click', closeOverlay);
-overlay.addEventListener('click', e => {
-  if (e.target === overlay) closeOverlay();
-});
-
-// Tap island to open photo (if already on that island)
-document.addEventListener('click', e => {
-  const g = e.target.closest('.island-group');
-  if (!g) return;
-  const idx = parseInt(g.dataset.index);
-  if (idx === currentIsland && !isAnimating) {
-    openOverlay(idx);
-  }
-});
+overlay.addEventListener('click', e => { if (e.target === overlay) closeOverlay(); });
 
 // ── Title card → map reveal ───────────────────────────────────
 let mapRevealed = false;
@@ -556,16 +584,13 @@ function revealMap() {
   renderMapBackground();
   renderIslands();
 
-  // Place boat at island 1
   setBoatPosition(POSITIONS[0]);
   centerViewOn(POSITIONS[0].x, POSITIONS[0].y, false);
   highlightIsland(0);
 }
 
-// Wait for title card to finish
 setTimeout(revealMap, 3400);
 
-// Also allow clicking to skip
 titleCard.addEventListener('click', () => {
   titleCard.style.animation = 'none';
   titleCard.style.opacity = '0';

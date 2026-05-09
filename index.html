@@ -70,6 +70,46 @@
     </div>
   </div>
 
+  <!-- Letter Overlay (revealed after the final photo closes) -->
+  <div id="letter-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="letter-greeting">
+    <div id="letter-paper">
+      <!-- Wax seal -->
+      <svg id="wax-seal" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <defs>
+          <radialGradient id="wax-grad" cx="35%" cy="32%" r="65%">
+            <stop offset="0%" stop-color="#B53A3A"/>
+            <stop offset="55%" stop-color="#8C1F1F"/>
+            <stop offset="100%" stop-color="#5C1212"/>
+          </radialGradient>
+        </defs>
+        <!-- Drips -->
+        <path d="M22 60 Q26 72 30 60 Z" fill="#5C1212" opacity="0.7"/>
+        <path d="M55 58 Q60 70 64 58 Z" fill="#5C1212" opacity="0.7"/>
+        <!-- Main seal -->
+        <circle cx="40" cy="40" r="30" fill="url(#wax-grad)" stroke="#3a0a0a" stroke-width="1.2"/>
+        <!-- Crinkled rim -->
+        <circle cx="40" cy="40" r="26" fill="none" stroke="#3a0a0a" stroke-width="0.8" stroke-dasharray="2 1" opacity="0.55"/>
+        <!-- Heart -->
+        <path d="M40 52 C 30 44, 26 36, 32 31 C 36 28, 39 31, 40 34 C 41 31, 44 28, 48 31 C 54 36, 50 44, 40 52 Z"
+              fill="#F4D9A8" opacity="0.92"/>
+        <!-- Highlight -->
+        <ellipse cx="32" cy="28" rx="6" ry="3" fill="#fff" opacity="0.18"/>
+      </svg>
+
+      <div id="letter-body">
+        <p class="letter-line" id="letter-greeting">Mumma,</p>
+        <p class="letter-line">There are things I've never quite found the words for &mdash; but I hope this little journey told you some of them.</p>
+        <p class="letter-line">Every memory on this map has your warmth woven into it. You are the reason I know what home feels like. The reason I know how to love, how to laugh, how to keep going when things get hard.</p>
+        <p class="letter-line">You never asked for credit. You just showed up &mdash; every single day &mdash; quietly holding everything together, including me.</p>
+        <p class="letter-line">I am so endlessly grateful that of all the mothers in the world, I got you.</p>
+        <p class="letter-line letter-closing">Happy Mother's Day, Mumma.<br/><span>With all my love, always.</span></p>
+      </div>
+
+      <div class="letter-divider" aria-hidden="true"></div>
+      <button id="btn-restart" type="button">Sail Again <span aria-hidden="true">⚓</span></button>
+    </div>
+  </div>
+
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

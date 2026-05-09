@@ -510,21 +510,33 @@ function navigateTo(idx, openPhoto = true) {
   }
   steps.push(idx);
 
+  // Compress the per-segment duration for multi-island jumps so a long sail
+  // finishes in a few seconds instead of dragging through 1.8s per island.
+  // Total target: ~1.8s for 1 segment, ~3s for many.
+  const segCount = steps.length - 1;
+  let segDur;
+  if (segCount <= 1) segDur = null; // leisurely random 1.8–2.5s
+  else if (segCount <= 3) segDur = 900;
+  else if (segCount <= 6) segDur = 500;
+  else segDur = Math.max(220, 3000 / segCount);
+  const interSegPause = segCount <= 1 ? 60 : 0;
+
   let stepI = 0;
   function doStep() {
     if (stepI >= steps.length - 1) {
       markVisited(idx);
       highlightIsland(idx);
       isAnimating = false;
-      if (openPhoto) setTimeout(() => openOverlay(idx), 300);
+      if (openPhoto) setTimeout(() => openOverlay(idx), 250);
       return;
     }
     // mark each intermediate island visited as the boat passes through
     markVisited(steps[stepI]);
     animateBoatAlongPath(steps[stepI], steps[stepI+1], () => {
       stepI++;
-      setTimeout(doStep, stepI === steps.length - 1 ? 0 : 60);
-    });
+      if (interSegPause) setTimeout(doStep, interSegPause);
+      else doStep();
+    }, segDur);
   }
   doStep();
 }
